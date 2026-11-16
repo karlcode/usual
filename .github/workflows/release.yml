@@ -1,0 +1,83 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # a dry run: builds and verifies, publishes nothing
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install the cross-compilers
+        run: |
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin
+          pip install ziglang cargo-zigbuild
+      - run: scripts/release.sh "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+
+  verify:
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, build: linux_amd64 }
+          - { os: ubuntu-24.04-arm, build: linux_arm64 }
+          - { os: macos-latest, build: darwin_arm64 }
+          - { os: macos-15-intel, build: darwin_amd64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: cargo test --release --locked
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+      - run: |
+          mkdir bin && tar -xzf "dist/usual_${{ matrix.build }}.tar.gz" -C bin
+          scripts/smoke.sh bin/usual
+
+  publish:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+      - run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/checksums.txt --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Formulae live in karlcode/homebrew-tap; this replaces only Formula/usual.rb there.
+      - name: Update the Homebrew tap
+        env:
+          TAP_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/key"
+          printf '%s\n' "$TAP_KEY" > "$RUNNER_TEMP/key"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/key -o IdentitiesOnly=yes"
+          tap=$RUNNER_TEMP/tap
+          git clone -q git@github.com:karlcode/homebrew-tap.git "$tap"
+          mkdir -p "$tap/Formula"
+          scripts/formula.sh "${GITHUB_REF_NAME#v}" dist/checksums.txt > "$tap/Formula/usual.rb"
+          cd "$tap"
+          git checkout -q -B main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/usual.rb
+          git commit -q -m "usual ${GITHUB_REF_NAME}"
+          git push -q origin main
