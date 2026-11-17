@@ -17,7 +17,7 @@ typeset -g _usual_typing=0 _usual_typed= _usual_sel=0 _usual_base=0
 typeset -ga _usual_matches
 typeset -gA _usual_descof
 typeset -gA _usual_starts
-typeset -g _usual_memo= _usual_italic= _usual_layout_key=
+typeset -g _usual_memo= _usual_italic= _usual_layout_key= _usual_ss_key= _usual_ss=-1
 typeset -ga _usual_layout
 [[ $ZSH_VERSION == (5.<9->*|<6->*) ]] && _usual_memo=' memo=usual'
 # zsh < 5.10 drops a highlight's memo after an unknown word like italic, leaking the hint's colour.
@@ -138,7 +138,10 @@ _usual_promptwidth() {
   [[ -o promptsubst ]] && subst=1
   emulate -L zsh -o extendedglob
   reply=(-1 -1)
-  [[ $p == *('$('|'`')* ]] && return
+  if [[ $p == *('$('|'`')* ]]; then
+    _usual_starship && reply=($REPLY $REPLY)
+    return
+  fi
   (( subst )) && p=${(e)p}
   p=${${(%)p}##*$'\n'}
   p=${p//$'\e'\[[0-9;?]#[@-~]/}                          # colours and other CSI sequences
@@ -148,6 +151,43 @@ _usual_promptwidth() {
     return
   fi
   reply=($(( ${(m)#p} % COLUMNS )) $(( ${(m)#p} % COLUMNS )))
+}
+
+# Starship's prompt is $(starship prompt …), which can't be measured without running it again. Its default format
+# ends on a line of its own that holds only the character module (❯ and a space), so the config says how wide the
+# line you type on starts: the hint gets the whole width, not the half left for a prompt of unknown width.
+_usual_starship() {
+  [[ $STARSHIP_SHELL == zsh && $PS1 == *starship*prompt* ]] || return 1
+  emulate -L zsh -o extendedglob
+  local f=${STARSHIP_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/starship.toml} c= top fmt sect sym='❯'
+  local -a st
+  zstat -A st +mtime -- $f 2>/dev/null || st=(0)
+  if [[ $_usual_ss_key != "$f $st[1]" ]]; then
+    _usual_ss_key="$f $st[1]" _usual_ss=-1
+    [[ -r $f ]] && c=$'\n'$(<$f)
+    top=${c%%$'\n'\[*}                                   # keys before the first [section]
+    if [[ $'\n'$top == (#b)*$'\n'[[:space:]]#format[[:space:]]#=[[:space:]]#(*) ]]; then
+      fmt=$match[1]
+      fmt=${${fmt#(\"\"\"|\'\'\'|\"|\')}%%(\"\"\"|\'\'\'|\"|\')*}
+      # a custom format: fine if its last line is the character module alone
+      fmt=${${fmt##*(\$line_break|\\n|$'\n')}//[[:space:]]/}
+      [[ $fmt == '$all' ]] && fmt=
+      [[ -z $fmt || $fmt == '$character' ]] || return 1
+    fi
+    sect=${c#*$'\n'\[line_break\]}
+    [[ $sect != $c && ${sect%%$'\n'\[*} == *disabled[[:space:]]#=[[:space:]]#true* ]] && return 1
+    sect=${c#*$'\n'\[character\]}
+    if [[ $sect != $c && ${sect%%$'\n'\[*} == (#b)*success_symbol[[:space:]]#=[[:space:]]#[\"\']\[([^\]]#)\]* ]]; then
+      sym=$match[1]
+    fi
+    _usual_ss=$(( ${(m)#sym} + 1 ))
+  fi
+  (( _usual_ss >= 0 )) || return 1
+  REPLY=$_usual_ss
+  # its jobs module joins that line while jobs run: ✦ for one, ✦2 for two
+  local n=${#jobstates}
+  (( n )) && (( REPLY += n > 1 ? 2 + ${#n} : 2 ))
+  return 0
 }
 
 _usual_fit() {
@@ -273,17 +313,28 @@ _usual_draw() {
       (( w > 28 )) && w=28
       (( w > (width - $#indent) / 2 )) && w=$(( (width - $#indent) / 2 ))
       w1=$(( w < line1 ? w : line1 ))
-      (( line1 - w1 >= $#cap + 2 )) || cap=
-      room=$(( line1 - w1 - 2 - (${#cap} ? $#cap + 2 : 0) ))
+      room=$(( line1 - w1 - 2 ))
       dw=0
       if (( room >= 8 )); then
         for d in $_usual_descs; do
           (( _usual_utf8 )) || d=${d//[^\ -~]/}
-          (( ${(m)#d} > dw )) || continue
-          (( ${(m)#d} <= room )) && { dw=${(m)#d}; continue }   # fits as it is
-          _usual_fitdesc $d $room
-          (( ${(m)#REPLY} > dw )) && dw=${(m)#REPLY}
+          (( ${(m)#d} > dw )) && dw=${(m)#d}
         done
+      fi
+      # The whole hint comes first. The key goes at the end of the line only if every description fits there
+      # whole beside it; otherwise it goes on the line below (tab accept), and the descriptions get the room.
+      if (( (dw ? dw + 2 : 0) + $#cap > room )); then
+        cap=
+        if (( dw > room )); then
+          dw=0
+          for d in $_usual_descs; do
+            (( _usual_utf8 )) || d=${d//[^\ -~]/}
+            (( ${(m)#d} > dw )) || continue
+            (( ${(m)#d} <= room )) && { dw=${(m)#d}; continue }   # fits as it is
+            _usual_fitdesc $d $room
+            (( ${(m)#REPLY} > dw )) && dw=${(m)#REPLY}
+          done
+        fi
       fi
       _usual_layout=($w $w1 $dw $#cap) _usual_layout_key=$key
     fi
