@@ -235,12 +235,38 @@ release: build
 
 _hidden:
     echo
+
+# Start the device on a page, e.g. a test app. arch is arm or x64,
+# and memory is its size.
+up:
+    echo
+
+# ---------- Tools ----------
+# Format the code.
+fmt:
+    echo
 "#,
         )],
     );
     let (_, list) = suggest_now(&root);
-    expect(cmds(&root), &["just build", "just release"]);
-    assert!(list[0].desc == "Build it" && list[1].desc == "Ship it", "docs: {list:?}");
+    let desc = |c: &str| list.iter().find(|s| s.cmd == c).map(|s| s.desc.clone()).unwrap_or_default();
+    let mut got = cmds(&root);
+    got.sort();
+    expect(got, &["just build", "just fmt", "just release", "just up"]);
+    assert!(desc("just build") == "Build it" && desc("just release") == "Ship it", "docs: {list:?}");
+    assert_eq!(desc("just up"), "Start the device on a page, e.g. a test app");
+    assert_eq!(desc("just fmt"), "Format the code");
+}
+
+#[test]
+fn test_first_sentence() {
+    use crate::first_sentence as f;
+    assert_eq!(f("Build it."), "Build it");
+    assert_eq!(f("Build it. Then ship it."), "Build it");
+    assert_eq!(f("Use the  x64 image, i.e. faster. Slow on arm."), "Use the x64 image, i.e. faster");
+    assert_eq!(f("Wait for it..."), "Wait for it...");
+    assert_eq!(f("Serve on http://localhost:8080/a.html."), "Serve on http://localhost:8080/a.html");
+    assert_eq!(f("Step 1. Build"), "Step 1. Build");
 }
 
 #[test]
@@ -253,7 +279,8 @@ fn test_make() {
             "CC := gcc
 X = a:b
 .PHONY: test lint
-## Run the tests
+## Run the tests. Needs Go,
+## and a network for the first run.
 test:
 \tgo test
 lint: ## Lint the code

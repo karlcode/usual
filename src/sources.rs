@@ -319,7 +319,17 @@ fn just_tasks(root: &str) -> Vec<Candidate> {
         }
         open = false;
         if l.starts_with('#') && !l.starts_with("#!") {
-            doc = l.trim_start_matches('#').trim().to_string();
+            // A comment can run over several lines; `just --list` shows only the last, often mid-sentence.
+            let t = l.trim_start_matches('#').trim();
+            let divider = ["---", "===", "***", "~~~", "///", "###"].iter().any(|d| t.starts_with(d));
+            if !divider && t.chars().any(char::is_alphanumeric) {
+                if !doc.is_empty() {
+                    doc.push(' ');
+                }
+                doc.push_str(t);
+            } else {
+                doc.clear(); // a divider: what follows is a new block
+            }
             continue;
         }
         if l.starts_with('[') {
@@ -337,7 +347,7 @@ fn just_tasks(root: &str) -> Vec<Candidate> {
                         if !private && !name.starts_with('_') {
                             let cmd = format!("just {name}");
                             let forms: Vec<&str> = if first { vec![cmd.as_str(), "=just"] } else { vec![cmd.as_str()] };
-                            out.push(task(&cmd, &doc, name, &forms));
+                            out.push(task(&cmd, &crate::first_sentence(&doc), name, &forms));
                             open = true;
                         }
                         first = false;
@@ -366,7 +376,8 @@ fn make_tasks(root: &str) -> Vec<Candidate> {
         let mut doc = std::mem::take(&mut prev_doc);
         if l.starts_with("##") {
             if !l.starts_with("##@") {
-                prev_doc = l.trim_start_matches('#').trim().to_string();
+                let t = l.trim_start_matches('#').trim();
+                prev_doc = if doc.is_empty() { t.to_string() } else { format!("{doc} {t}") };
             }
             continue;
         }
@@ -424,7 +435,12 @@ fn make_tasks(root: &str) -> Vec<Candidate> {
         }
         for n in fields(&l[..colon]) {
             if !n.contains(['%', '.', '/', '\\']) {
-                targets.push(Target { name: n, desc: doc.clone(), recipe: String::new(), needs: needs.join(", ") });
+                targets.push(Target {
+                    name: n,
+                    desc: crate::first_sentence(&doc),
+                    recipe: String::new(),
+                    needs: needs.join(", "),
+                });
                 open += 1;
             }
         }

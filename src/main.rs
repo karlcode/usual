@@ -171,6 +171,25 @@ pub fn one_line(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A comment's first sentence, without its full stop: the opening says what a task is for,
+/// and the rest (caveats, options) is what gets cut when the line is short.
+pub fn first_sentence(s: &str) -> String {
+    let s = one_line(s);
+    let mut end = s.len();
+    for (i, _) in s.match_indices(". ") {
+        let word = s[..i].rsplit(' ').next().unwrap_or("").to_ascii_lowercase();
+        if word.chars().count() > 1 && !matches!(word.as_str(), "e.g" | "i.e" | "vs" | "etc" | "cf" | "approx") {
+            end = i;
+            break;
+        }
+    }
+    let out = &s[..end];
+    match out.strip_suffix('.') {
+        Some(o) if !o.ends_with('.') => o.to_string(),
+        _ => out.to_string(),
+    }
+}
+
 pub fn base_name(s: &str) -> String {
     gofs::base(s)
 }
