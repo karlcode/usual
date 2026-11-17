@@ -323,7 +323,8 @@ _usual_draw() {
       fi
       # The whole hint comes first. The key goes at the end of the line only if every description fits there
       # whole beside it; otherwise it goes on the line below (tab accept), and the descriptions get the room.
-      if (( (dw ? dw + 2 : 0) + $#cap > room )); then
+      # Decided for the whole list, so the key doesn't hop between the two lines as ↓ steps.
+      if (( dw ? dw + 4 + $#cap > room : $#cap > room )); then
         cap=
         if (( dw > room )); then
           dw=0
@@ -343,13 +344,24 @@ _usual_draw() {
     (( w1 < 4 )) && return 0
     _usual_fitcmd $_usual_cmds[i] $w1
     _usual_put "${(r:w1:)REPLY}" $sc$_usual_italic
-    room=$(( line1 - w1 - 2 - (${#cap} ? $#cap + 2 : 0) ))
+    room=$(( line1 - w1 - 2 - (${#cap} ? $#cap + 4 : 0) ))
     d=$_usual_descs[i] REPLY=
     (( _usual_utf8 )) || d=${d//[^\ -~]/}
     (( dw )) && [[ -n $d ]] && _usual_fitdesc $d $room
     if [[ -n $cap ]]; then
-      (( dw )) && _usual_put "  ${(mr:dw:)REPLY}" $sd
-      _usual_put '  '
+      # just past the longest description on screen, a column of its own
+      local dv=0 e
+      for j in $shown; do
+        e=$_usual_descs[j]
+        (( _usual_utf8 )) || e=${e//[^\ -~]/}
+        (( ${(m)#e} > dv )) && dv=${(m)#e}
+      done
+      if (( dv )); then
+        _usual_put "  ${(mr:dv:)REPLY}" $sd
+        _usual_put '    '
+      else
+        _usual_put '  '
+      fi
       _usual_put $cap $sk
     elif [[ -n $REPLY ]]; then
       _usual_put "  $REPLY" $sd
