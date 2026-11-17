@@ -113,7 +113,22 @@ pub fn split_commands(s: &str) -> Vec<&str> {
     let b = s.as_bytes();
     let mut out = Vec::new();
     let (mut piece, mut i) = (0, 0);
+    let mut quote = 0u8; // inside '…' or "…" a ; or && is text: FOO="a;b" cmd is one command
     while i < b.len() {
+        if quote != 0 {
+            if b[i] == b'\\' && quote == b'"' {
+                i += 1;
+            } else if b[i] == quote {
+                quote = 0;
+            }
+            i += 1;
+            continue;
+        }
+        if b[i] == b'\'' || b[i] == b'"' {
+            quote = b[i];
+            i += 1;
+            continue;
+        }
         let sep = if b[i..].starts_with(b"&&") || b[i..].starts_with(b"||") {
             2
         } else if b[i] == b';' {

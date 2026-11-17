@@ -371,7 +371,7 @@ fn make_tasks(root: &str) -> Vec<Candidate> {
     let mut targets: Vec<Target> = Vec::new();
     let mut phony: HashSet<String> = HashSet::new();
     let mut vars: HashMap<String, String> = HashMap::new();
-    let (mut prev_doc, mut open) = (String::new(), 0usize);
+    let (mut prev_doc, mut open, mut cont) = (String::new(), 0usize, String::new());
     for l in lines(&first_existing(root, &["GNUmakefile", "Makefile", "makefile"])) {
         let mut doc = std::mem::take(&mut prev_doc);
         if l.starts_with("##") {
@@ -381,12 +381,27 @@ fn make_tasks(root: &str) -> Vec<Candidate> {
             }
             continue;
         }
-        if l.starts_with('\t') {
-            let t = l.trim().trim_start_matches(['@', '-', '+']);
-            if open > 0 && !t.is_empty() && !crate::pat::recipe_noise(t) {
-                let t = t.strip_suffix('\\').unwrap_or(t);
-                let t = crate::pat::replace_make_vars(t, |r| {
-                    vars.get(r.trim_matches(|c| "${}()".contains(c))).cloned().unwrap_or_else(|| r.to_string())
+        if l.starts_with('\t') || !cont.is_empty() {
+            // A recipe line ending in \ goes on: read it whole, or `-d)` is all that's left of `$$(mktemp -d)`.
+            let t = if cont.is_empty() { l.trim().trim_start_matches(['@', '-', '+']) } else { l.trim() };
+            if open > 0 && !t.is_empty() && (!cont.is_empty() || !crate::pat::recipe_noise(t)) {
+                if let Some(head) = t.strip_suffix('\\') {
+                    cont.push_str(head.trim_end());
+                    cont.push(' ');
+                    continue;
+                }
+                let t = format!("{}{t}", std::mem::take(&mut cont));
+                let t = crate::pat::replace_make_vars(&t, |r| {
+                    let name = r.trim_matches(|c| "${}()".contains(c));
+                    vars.get(name).cloned().unwrap_or_else(|| {
+                        // $(MAKE), $(CMAKE), $(GO): the tool, by its usual name
+                        let tool = name.len() <= 8 && name.chars().all(|c| c.is_ascii_uppercase());
+                        if tool {
+                            name.to_ascii_lowercase()
+                        } else {
+                            r.to_string()
+                        }
+                    })
                 });
                 let n = targets.len();
                 for tg in &mut targets[n - open..] {
