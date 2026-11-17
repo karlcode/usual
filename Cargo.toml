@@ -1,6 +1,6 @@
 [package]
 name = "usual"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Shows a project's likely next command on the zsh prompt"
 license = "MIT"
