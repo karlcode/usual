@@ -25,6 +25,10 @@ typeset -ga _usual_layout
 zmodload -F zsh/datetime p:EPOCHSECONDS 2>/dev/null
 zmodload -F zsh/stat b:zstat 2>/dev/null
 zmodload -F zsh/files b:zf_rm 2>/dev/null
+# An upgrade (brew upgrade) replaces this file and the binary under open shells. Their next prompt loads the new file,
+# so old plugin code never runs against a new binary. Under `eval "$(usual init zsh)"` the binary is what's watched.
+typeset -g _usual_src= _usual_bin= _usual_stamp=
+[[ $zsh_eval_context[-2] == file* ]] && _usual_src=${${(%):-%x}:a}   # filecode: compiled (install.sh, brew)
 
 _usual_settings() {
   case ${(L)USUAL_HINT} in
@@ -42,6 +46,14 @@ _usual_style() {
 
 _usual_precmd() {
   emulate -L zsh
+  local -a st
+  local f=${_usual_src:-$_usual_bin}
+  # -e, not 2>/dev/null: a redirection costs 10 µs a prompt
+  if [[ -n $_usual_stamp && -e $f ]] && zstat -A st +mtime -- $f && [[ $st[1] != $_usual_stamp ]]; then
+    _usual_stamp=$st[1]   # before loading: a new file that loads nothing isn't tried again at every prompt
+    _usual_reload
+    return
+  fi
   _usual_settings
   # Still drawn: Ctrl-C under a prompt with its own INT trap (powerlevel10k) skipped our cleanup.
   _usual_pw=
@@ -70,6 +82,17 @@ _usual_precmd() {
     [[ $_usual_show == off ]] && _usual_on=0
   fi
   (( _usual_i <= $#_usual_cmds )) || _usual_i=1
+}
+
+_usual_reload() {
+  emulate -L zsh -o no_aliases   # the user's aliases exist by now: keep them out of the new code
+  if [[ -n $_usual_src ]]; then
+    source $_usual_src
+  else
+    eval "$(command $_usual_bin init zsh 2>/dev/null)"
+  fi
+  (( ${+functions[_usual_bind]} )) && _usual_bind
+  _usual_precmd
 }
 
 _usual_saved() {
@@ -530,6 +553,9 @@ _usual_keyname() {
 _usual_bind() {
   emulate -L zsh
   add-zsh-hook -d precmd _usual_bind
+  local -a st
+  [[ -n $_usual_src ]] || { st=($^path/usual(N-*)); _usual_bin=$st[1] }
+  zstat -A st +mtime -- ${_usual_src:-$_usual_bin} 2>/dev/null && _usual_stamp=$st[1]
   # After mise, direnv and asdf change $PATH: hints depend on which programs are installed.
   precmd_functions=(${precmd_functions:#_usual_precmd} _usual_precmd)
   local tmp=${TMPDIR:-/tmp}/usual.$UID.$$ out line seq widget REPLY
