@@ -32,7 +32,7 @@ expect() {
   fi
 }
 T=$'\t'
-node=("npm install${T}dependencies not installed" "npm run dev${T}vite" "npm run build${T}tsc, vite build"
+node=("npm install${T}dependencies not installed" "npm run dev${T}vite" "npm run build${T}type-check, build"
   "npm test${T}vitest" "npm run lint${T}eslint")
 expect node "${node[@]}"
 expect node/src "${node[@]}"
