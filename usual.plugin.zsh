@@ -17,7 +17,8 @@ typeset -g _usual_typing=0 _usual_typed= _usual_sel=0 _usual_base=0
 typeset -ga _usual_matches
 typeset -gA _usual_descof
 typeset -gA _usual_starts
-typeset -g _usual_memo= _usual_italic=
+typeset -g _usual_memo= _usual_italic= _usual_layout_key=
+typeset -ga _usual_layout
 [[ $ZSH_VERSION == (5.<9->*|<6->*) ]] && _usual_memo=' memo=usual'
 # zsh < 5.10 drops a highlight's memo after an unknown word like italic, leaking the hint's colour.
 [[ $ZSH_VERSION == (5.<10->*|<6->*) ]] && _usual_italic=,italic
@@ -62,7 +63,7 @@ _usual_precmd() {
   [[ $n == <-> ]] || n=0
   root=$reply[1]
   _usual_cmds=("${(@)reply[3,2+n]}") _usual_descs=("${(@)reply[3+n,2+2*n]}")
-  _usual_starts=() _usual_descof=()
+  _usual_starts=() _usual_descof=() _usual_layout_key=
   (( n )) && _usual_descof=("${(@)_usual_cmds:^_usual_descs}")
   if [[ $root != $_usual_root || $_usual_show == always ]]; then
     _usual_root=$root _usual_i=1 _usual_on=1
@@ -263,25 +264,45 @@ _usual_draw() {
   if [[ -z $BUFFER ]]; then
     shown=($i)
     for (( k = 1; k < n && k < rows; k++ )); do shown+=($(( (i + k - 1) % n + 1 ))); done
-    local w1
-    for j in $shown; do (( $#_usual_cmds[j] > w )) && w=$#_usual_cmds[j]; done
-    (( w > 28 )) && w=28
-    (( w > (width - $#indent) / 2 )) && w=$(( (width - $#indent) / 2 ))
-    w1=$(( w < line1 ? w : line1 ))
-    (( w1 < 4 )) && return 0
-    local cap=$ka
+    # Columns come from the whole list, not the rows on screen or the hint's own length, so stepping with ↓
+    # changes only the text: descriptions start in one column and the key stays in one place.
+    local w1 dw cap=$ka key="$n $line1 $width $#indent $_usual_utf8 $_usual_run $ka"
     (( _usual_run )) && cap="$ka to run"
-    (( line1 - w1 >= $#cap + 2 )) || cap=
+    if [[ $key != $_usual_layout_key ]]; then
+      for (( j = 1; j <= n; j++ )); do (( $#_usual_cmds[j] > w )) && w=$#_usual_cmds[j]; done
+      (( w > 28 )) && w=28
+      (( w > (width - $#indent) / 2 )) && w=$(( (width - $#indent) / 2 ))
+      w1=$(( w < line1 ? w : line1 ))
+      (( line1 - w1 >= $#cap + 2 )) || cap=
+      room=$(( line1 - w1 - 2 - (${#cap} ? $#cap + 2 : 0) ))
+      dw=0
+      if (( room >= 8 )); then
+        for d in $_usual_descs; do
+          (( _usual_utf8 )) || d=${d//[^\ -~]/}
+          (( ${(m)#d} > dw )) || continue
+          (( ${(m)#d} <= room )) && { dw=${(m)#d}; continue }   # fits as it is
+          _usual_fitdesc $d $room
+          (( ${(m)#REPLY} > dw )) && dw=${(m)#REPLY}
+        done
+      fi
+      _usual_layout=($w $w1 $dw $#cap) _usual_layout_key=$key
+    fi
+    w=$_usual_layout[1] w1=$_usual_layout[2] dw=$_usual_layout[3]
+    (( _usual_layout[4] )) || cap=
+    (( w1 < 4 )) && return 0
     _usual_fitcmd $_usual_cmds[i] $w1
     _usual_put "${(r:w1:)REPLY}" $sc$_usual_italic
     room=$(( line1 - w1 - 2 - (${#cap} ? $#cap + 2 : 0) ))
-    d=$_usual_descs[i]
+    d=$_usual_descs[i] REPLY=
     (( _usual_utf8 )) || d=${d//[^\ -~]/}
-    if (( room >= 8 )) && [[ -n $d ]]; then
-      _usual_fitdesc $d $room
-      [[ -n $REPLY ]] && _usual_put "  $REPLY" $sd
+    (( dw )) && [[ -n $d ]] && _usual_fitdesc $d $room
+    if [[ -n $cap ]]; then
+      (( dw )) && _usual_put "  ${(mr:dw:)REPLY}" $sd
+      _usual_put '  '
+      _usual_put $cap $sk
+    elif [[ -n $REPLY ]]; then
+      _usual_put "  $REPLY" $sd
     fi
-    [[ -n $cap ]] && { _usual_put '  '; _usual_put $cap $sk }
     for j in $shown[2,-1]; do _usual_row "$_usual_cmds[j]" "$_usual_descs[j]" $sc; done
     local count="${(l:$#n:)i}/$n"   # fixed width, so stepping doesn't shift it
     if [[ -n $cap ]]; then
