@@ -211,14 +211,20 @@ _usual_fitcmd() {
 }
 
 _usual_fitdesc() {
-  # Too long: keep the clauses that fit, or nothing.
+  # Too long: keep the clauses that fit; failing that, the words that fit and an ellipsis. Some of a hint
+  # says more than none: at 55 columns "dependencies not installed" was dropped whole.
   local cut='(, |: |; |. | \(| — | - )'
   REPLY=$1
   (( ${(m)#REPLY} > $2 )) && [[ $REPLY == ?*': '* ]] && REPLY=${REPLY%%: *}
-  while (( ${(m)#REPLY} > $2 )); do
-    [[ $REPLY == *${~cut}* ]] || { REPLY=; return }
+  while (( ${(m)#REPLY} > $2 )) && [[ $REPLY == *${~cut}* ]]; do
     REPLY=${REPLY%${~cut}*}
   done
+  (( ${(m)#REPLY} > $2 )) || return 0
+  while (( ${(m)#REPLY} + 1 > $2 )) && [[ $REPLY == *' '* ]]; do
+    REPLY=${REPLY% *}
+  done
+  REPLY=${REPLY%%[,:;.]#}
+  (( ${(m)#REPLY} + 1 <= $2 && ${(m)#REPLY} >= 4 )) && REPLY+=$_usual_ell || REPLY=
 }
 
 _usual_draw() {
