@@ -28,12 +28,12 @@ if command -v hyperfine >/dev/null; then
   usual "$big" >/dev/null
   hyperfine -N -w 20 -m 200 --style basic -n spawn 'true' -n start 'usual version' \
     -n cached "usual $big" -n fresh "env XDG_CACHE_HOME=/nonexistent usual $big" 2>&1 |
-    grep -E '^Benchmark|Time \(mean'
+    grep -E '^Benchmark|Time \(mean|Wall Time'
   if [[ -w /proc/sys/vm/drop_caches ]]; then
     echo; echo "== Cold disk (first cd after a reboot)"
     hyperfine -N -m 10 --style basic --prepare 'sh -c "sync; echo 3 > /proc/sys/vm/drop_caches"' \
       -n cold-cached "usual $big" -n cold-fresh "env XDG_CACHE_HOME=/nonexistent usual $big" 2>&1 |
-      grep -E '^Benchmark|Time \(mean'
+      grep -E '^Benchmark|Time \(mean|Wall Time'
   fi
 fi
 
@@ -42,10 +42,14 @@ if command -v zsh >/dev/null; then
   zdot=$work/zdot && mkdir -p "$zdot" && : >"$zdot/.zshrc"
   zdot2=$work/zdot2 && mkdir -p "$zdot2" && echo 'eval "$(usual init zsh)"' >"$zdot2/.zshrc"
   zdot3=$work/zdot3 && mkdir -p "$zdot3" && echo "source $PWD/usual.plugin.zsh" >"$zdot3/.zshrc"
+  zdot4=$work/zdot4 && mkdir -p "$zdot4" && usual init zsh >"$work/usual.plugin.zsh" &&
+    zsh -fc 'zcompile -- "$1"' zsh "$work/usual.plugin.zsh" && echo "source $work/usual.plugin.zsh" >"$zdot4/.zshrc"
   if command -v hyperfine >/dev/null; then
     hyperfine -N -w 5 -m 50 --style basic -n 'zsh startup' "env ZDOTDIR=$zdot zsh -i -c exit" \
       -n 'zsh startup + eval usual init' "env ZDOTDIR=$zdot2 zsh -i -c exit" \
-      -n 'zsh startup + source plugin' "env ZDOTDIR=$zdot3 zsh -i -c exit" 2>&1 | grep -E '^Benchmark|Time \(mean'
+      -n 'zsh startup + source plugin' "env ZDOTDIR=$zdot3 zsh -i -c exit" \
+      -n 'zsh startup + source compiled plugin (install.sh, brew)' "env ZDOTDIR=$zdot4 zsh -i -c exit" 2>&1 |
+      grep -E '^Benchmark|Time \(mean|Wall Time'
   fi
   (cd "$big" && ZDOTDIR=$zdot2 zsh -i -c '
     zmodload zsh/datetime

@@ -49,18 +49,32 @@ mv -f "$tmp/usual" "$dir/usual"
 chmod 755 "$dir/usual"
 say "Installed $dir/usual"
 
-if grep -q 'usual init zsh' "$zshrc" 2>/dev/null; then
+# A file to source: each new shell then skips starting a process for `usual init zsh` (3-4 ms),
+# and compiled it skips parsing too (1-2 ms). zsh ignores the .zwc once the file is newer, or after a zsh upgrade.
+data=${XDG_DATA_HOME:-$HOME/.local/share}/usual
+plugin=$data/usual.plugin.zsh
+mkdir -p "$data"
+rm -f "$plugin.zwc"
+"$dir/usual" init zsh >"$plugin"
+if command -v zsh >/dev/null 2>&1; then
+  zsh -fc 'zcompile -- "$1"' zsh "$plugin" 2>/dev/null || rm -f "$plugin.zwc"
+fi
+say "Installed $plugin"
+
+home() { case $1 in "$HOME"/*) printf '%s' "\$HOME/${1#"$HOME"/}" ;; *) printf '%s' "$1" ;; esac; }
+if grep -q 'usual\.plugin\.zsh' "$zshrc" 2>/dev/null; then
   say "$zshrc already loads it."
+elif grep -q 'usual init zsh' "$zshrc" 2>/dev/null; then
+  say "$zshrc already loads it. New shells start faster if you replace its eval \"\$(usual init zsh)\" line with:"
+  say "  source \"$(home "$plugin")\""
 else
-  shown=$dir
-  case $dir in "$HOME"/*) shown="\$HOME/${dir#"$HOME"/}" ;; esac
   {
     printf '\n# usual: the next command for each project, on the prompt\n'
     case ":$PATH:" in
       *":$dir:"*) ;;
-      *) printf 'export PATH="%s:$PATH"\n' "$shown" ;;
+      *) printf 'export PATH="%s:$PATH"\n' "$(home "$dir")" ;;
     esac
-    printf 'eval "$(usual init zsh)"\n'
+    printf 'source "%s"\n' "$(home "$plugin")"
   } >>"$zshrc"
   say "Added it to $zshrc."
 fi

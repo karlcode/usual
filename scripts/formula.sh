@@ -42,18 +42,22 @@ class Usual < Formula
 
   def install
     bin.install "usual"
+    # Sourced, it saves each new shell a process; compiled, a parse too. zsh ignores a stale .zwc.
+    (pkgshare/"usual.plugin.zsh").write Utils.safe_popen_read(bin/"usual", "init", "zsh")
+    system "zsh", "-fc", "zcompile -- #{pkgshare}/usual.plugin.zsh" if which("zsh")
   end
 
   def caveats
     <<~EOS
       Add this line to the end of ~/.zshrc, then open a new terminal:
-        eval "\$(usual init zsh)"
+        source #{opt_pkgshare}/usual.plugin.zsh
     EOS
   end
 
   test do
     assert_match version.to_s, shell_output("#{bin}/usual version")
     assert_match "usual-accept", shell_output("#{bin}/usual init zsh")
+    assert_match "usual-accept", (pkgshare/"usual.plugin.zsh").read
   end
 end
 FORMULA

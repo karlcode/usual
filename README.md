@@ -21,7 +21,23 @@ curl -fsSL https://raw.githubusercontent.com/karlcode/usual/main/install.sh | sh
 ### brew
 
 ```bash
-brew install karlcode/tap/usual && echo 'eval "$(usual init zsh)"' >> ~/.zshrc
+brew install karlcode/tap/usual && echo "source $(brew --prefix)/opt/usual/share/usual/usual.plugin.zsh" >> ~/.zshrc
+```
+
+### oh-my-zsh, zinit, antidote
+
+`brew install karlcode/tap/usual` for the binary, then load the plugin your usual way:
+
+```bash
+git clone https://github.com/karlcode/usual ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/usual  # add usual to plugins=(…)
+```
+
+```bash
+zinit light karlcode/usual
+```
+
+```bash
+echo karlcode/usual >> ~/.zsh_plugins.txt  # antidote
 ```
 
 ## Keys and settings
@@ -49,4 +65,5 @@ USUAL_COMMAND_STYLE=244     # colour (also USUAL_DESCRIPTION_STYLE, USUAL_KEY_ST
 - `usual` lists, `usual | fzf` picks, `usual --json` for scripts.
 - Works with oh-my-zsh, powerlevel10k, starship, zsh-autosuggestions, fzf-tab, atuin, vi mode and [more](scripts/compat.py).
 - Order: missing setup, your habits, the README, then names. Risky last.
-- Uninstall: `rm ~/.local/bin/usual`, delete the `usual` line in `~/.zshrc`.
+- Nothing on the prompt? `usual` in the project should list commands. The hint needs zsh 5.3 or later and `usual` on your `PATH` before the line that loads it.
+- Uninstall: `rm -r ~/.local/bin/usual ~/.local/share/usual` (or `brew uninstall usual`), delete the `usual` lines in `~/.zshrc`.
